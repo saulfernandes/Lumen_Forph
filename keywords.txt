@@ -1,0 +1,8 @@
+Lumen_Forph	KEYWORD1
+LumenProtocol	KEYWORD1
+lumen_write	KEYWORD2
+lumen_write_packet	KEYWORD2
+lumen_available	KEYWORD2
+lumen_read	KEYWORD2
+lumen_request	KEYWORD2
+lumen_get_first_packet	KEYWORD2

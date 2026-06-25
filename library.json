@@ -1,0 +1,21 @@
+
+{
+  "name": "Lumen_Forph",
+  "version": "1.1.0",
+  "description": "Protocolo de comunicação serial para interfaces IHM industriais.",
+  "keywords": ["communication", "serial", "ihm", "lumen"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saulfernandes/Lumen_Forph"
+  },
+  "authors": [
+    {
+      "name": "Saul Fernandes",
+      "email": "saul-jazz@hotmail.com",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino"],
+  "platforms": ["*"]
+}
