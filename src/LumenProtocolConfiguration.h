@@ -19,7 +19,7 @@
 #define QUANTITY_OF_DATABUFFER_FOR_RETRY 1
 #endif
 
-#define USE_PROJECT_UPDATE false
+#define USE_PROJECT_UPDATE true
 
 // DO NOT MODIFY THESE 👇
 #define START_FLAG 0x12
