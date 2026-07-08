@@ -1,7 +1,7 @@
 #ifndef LUMEN_PROTOCOL_CONFIGURATION_H_
 #define LUMEN_PROTOCOL_CONFIGURATION_H_
 
-// Version 1.1
+// Version 1.4
 
 #define MAX_STRING_SIZE 11
 #define QUANTITY_OF_PACKETS 10
@@ -19,7 +19,24 @@
 #define QUANTITY_OF_DATABUFFER_FOR_RETRY 1
 #endif
 
-#define USE_PROJECT_UPDATE true
+/************************************************************ 
+ * 
+ * Attention! USE_PROJECT_UPDATE
+ * 
+ * While the project transfer is in progress,
+ * no functions other than those listed below will work:
+ * - lumen_project_update_send_data
+ * - lumen_project_update_tick
+ * - lumen_project_update_finish
+ * 
+ * 
+ * The other functions will resume working normally
+ * after the execution of the function:
+ * - lumen_project_update_finish
+ * 
+ ************************************************************/
+
+#define USE_PROJECT_UPDATE true 
 
 // DO NOT MODIFY THESE 👇
 #define START_FLAG 0x12

@@ -1,7 +1,6 @@
 #include "LumenProtocol.h"
-#include <string.h>
 
-// Version 1.1
+// Version 1.4
 
 extern void lumen_write_bytes(uint8_t *data, uint32_t length);
 extern uint16_t lumen_get_byte();
@@ -95,6 +94,8 @@ typedef enum lumen_project_update_response {
   kWaitingCommand,
   kReceivingProjectImageBlock
 } lumen_project_update_response_t;
+
+volatile bool g_is_updating = false;
 #endif
 
 static uint8_t quantityOfPacketsAvailable = 0;
@@ -155,6 +156,12 @@ static uint8_t writeTempData;
 #if USE_ACK
 uint32_t elapsed_time_in_ms = 0;
 void lumen_ack_trigger(uint32_t time_in_ms) {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return;
+#endif
+
   for (uint8_t dataOutIndex = 1; dataOutIndex < QUANTITY_OF_DATABUFFER_FOR_RETRY; ++dataOutIndex) {
     if (_dataOutRetries[dataOutIndex] > 0) {
       _dataOutElapsedTime[dataOutIndex] += time_in_ms;
@@ -169,6 +176,12 @@ void lumen_ack_trigger(uint32_t time_in_ms) {
 #endif
 
 uint32_t lumen_write(uint16_t address, uint8_t *data, uint32_t length) {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return 0;
+#endif
+
   static uint32_t outDataIndex;
   outDataIndex = 0;
 
@@ -285,7 +298,160 @@ uint32_t lumen_write(uint16_t address, uint8_t *data, uint32_t length) {
   return outDataIndex;
 }
 
+
+uint32_t lumen_write_variable_list(uint16_t address, uint16_t index, uint8_t *data, uint32_t length) {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return 0;
+#endif
+
+  static uint32_t outDataIndex;
+  outDataIndex = 0;
+
+  _dataOut[_dataOutIndex][outDataIndex] = START_FLAG;
+  ++outDataIndex;
+
+  _dataOut[_dataOutIndex][outDataIndex] = WRITE_FLAG;
+#if USE_CRC
+  _crc.value = 0xFFFF;
+  calculate_crc(_dataOut[_dataOutIndex][outDataIndex]);
+#endif
+  ++outDataIndex;
+
+  writeTempData = address & 0xFF;
+#if USE_CRC
+  calculate_crc(writeTempData);
+#endif
+  if (writeTempData == START_FLAG || writeTempData == END_FLAG || writeTempData == ESCAPE_FLAG) {
+    _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+    ++outDataIndex;
+    _dataOut[_dataOutIndex][outDataIndex] = writeTempData ^ XOR_FLAG;
+  } else {
+    _dataOut[_dataOutIndex][outDataIndex] = writeTempData;
+  }
+  ++outDataIndex;
+
+  writeTempData = address >> 8;
+#if USE_CRC
+  calculate_crc(writeTempData);
+#endif
+  if (writeTempData == START_FLAG || writeTempData == END_FLAG || writeTempData == ESCAPE_FLAG) {
+    _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+    ++outDataIndex;
+    _dataOut[_dataOutIndex][outDataIndex] = writeTempData ^ XOR_FLAG;
+  } else {
+    _dataOut[_dataOutIndex][outDataIndex] = writeTempData;
+  }
+  ++outDataIndex;
+
+#if USE_CRC
+  for (uint16_t i = 0; i < length; i++) {
+    calculate_crc(data[i]);
+  }
+#endif
+
+  u16_union_t _index;
+  _index.value = index;
+
+  if (_index.byte.low == START_FLAG || _index.byte.low == END_FLAG || _index.byte.low == ESCAPE_FLAG) {
+    _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+    ++outDataIndex;
+    _dataOut[_dataOutIndex][outDataIndex] = _index.byte.low ^ XOR_FLAG;
+    ++outDataIndex;
+  } else {
+    _dataOut[_dataOutIndex][outDataIndex] = _index.byte.low;
+    ++outDataIndex;
+  }
+
+  if (_index.byte.high == START_FLAG || _index.byte.high == END_FLAG || _index.byte.high == ESCAPE_FLAG) {
+    _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+    ++outDataIndex;
+    _dataOut[_dataOutIndex][outDataIndex] = _index.byte.high ^ XOR_FLAG;
+    ++outDataIndex;
+  } else {
+    _dataOut[_dataOutIndex][outDataIndex] = _index.byte.high;
+    ++outDataIndex;
+  }
+
+  for (uint16_t i = 0; i < length; i++) {
+    if (data[i] == START_FLAG || data[i] == END_FLAG || data[i] == ESCAPE_FLAG) {
+      _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+      ++outDataIndex;
+      _dataOut[_dataOutIndex][outDataIndex] = data[i] ^ XOR_FLAG;
+      ++outDataIndex;
+    } else {
+      _dataOut[_dataOutIndex][outDataIndex] = data[i];
+      ++outDataIndex;
+    }
+  }
+
+#if USE_ACK
+  _dataOut[_dataOutIndex][outDataIndex] = _dataOutIndex;
+#if USE_CRC
+  calculate_crc(_dataOut[_dataOutIndex][outDataIndex]);
+#endif
+  ++outDataIndex;
+  _dataOut[_dataOutIndex][outDataIndex] = 0;
+#if USE_CRC
+  calculate_crc(_dataOut[_dataOutIndex][outDataIndex]);
+#endif
+  ++outDataIndex;
+#endif
+
+#if USE_CRC
+  if ((_crc.byte.high == (uint8_t)START_FLAG) || (_crc.byte.high == (uint8_t)END_FLAG)
+      || (_crc.byte.high == (uint8_t)ESCAPE_FLAG)) {
+    _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+    ++outDataIndex;
+    _dataOut[_dataOutIndex][outDataIndex] = _crc.byte.high ^ XOR_FLAG;
+    ++outDataIndex;
+  } else {
+    _dataOut[_dataOutIndex][outDataIndex] = _crc.byte.high;
+    ++outDataIndex;
+  }
+
+  if ((_crc.byte.low == (uint8_t)START_FLAG) || (_crc.byte.low == (uint8_t)END_FLAG)
+      || (_crc.byte.low == (uint8_t)ESCAPE_FLAG)) {
+    _dataOut[_dataOutIndex][outDataIndex] = ESCAPE_FLAG;
+    ++outDataIndex;
+    _dataOut[_dataOutIndex][outDataIndex] = _crc.byte.low ^ XOR_FLAG;
+    ++outDataIndex;
+  } else {
+    _dataOut[_dataOutIndex][outDataIndex] = _crc.byte.low;
+    ++outDataIndex;
+  }
+#endif
+
+  _dataOut[_dataOutIndex][outDataIndex] = END_FLAG;
+  ++outDataIndex;
+
+  lumen_write_bytes(_dataOut[_dataOutIndex], outDataIndex);
+
+#if USE_ACK
+  _dataOutLengths[_dataOutIndex] = outDataIndex;
+  _dataOutElapsedTime[_dataOutIndex] = 0;
+  _dataOutRetries[_dataOutIndex] = QUANTITY_OF_RETRIES;
+  for (_dataOutIndex = 1; _dataOutIndex < QUANTITY_OF_DATABUFFER_FOR_RETRY; ++_dataOutIndex) {
+    if (_dataOutRetries[_dataOutIndex] == 0) {
+      break;
+    }
+  }
+  if (_dataOutIndex >= QUANTITY_OF_DATABUFFER_FOR_RETRY) {
+    _dataOutIndex = QUANTITY_OF_DATABUFFER_FOR_RETRY - 1;
+  }
+#endif
+
+  return outDataIndex;
+}
+
 uint32_t lumen_write_packet(lumen_packet_t *packet) {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return 0;
+#endif
+
   switch (packet->type) {
     case kBool:
       {
@@ -294,14 +460,15 @@ uint32_t lumen_write_packet(lumen_packet_t *packet) {
       break;
     case kString:
       {
-        uint8_t length = 0;
-        for (; length < MAX_STRING_SIZE; ++length) {
-          if (packet->data._string[length] == '\0') {
+        uint8_t index = 0;
+        for (; index < MAX_STRING_SIZE; ++index) {
+          if (packet->data._string[index] == '\0') {
             break;
           }
         }
 
-        lumen_write(packet->address, (uint8_t *)packet->data._string, length + 1);
+        uint8_t length = index + 1;
+        lumen_write(packet->address, (uint8_t *)packet->data._string, length);
       }
       break;
     case kChar:
@@ -449,6 +616,12 @@ void Pack() {
 }
 
 uint32_t lumen_available() {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return 0;
+#endif
+
   static bool _started;
   static bool _escaped;
 #if USE_CRC
@@ -511,6 +684,12 @@ uint32_t lumen_available() {
 }
 
 lumen_packet_t *lumen_get_first_packet() {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return NULL;
+#endif
+
   for (uint8_t i = 0; i < QUANTITY_OF_PACKETS; ++i) {
     if (occupiedSlots[i]) {
       occupiedSlots[i] = false;
@@ -522,6 +701,11 @@ lumen_packet_t *lumen_get_first_packet() {
 }
 
 bool lumen_request(lumen_packet_t *packet) {
+
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return false;
+#endif
 
   static uint32_t outDataIndex;
   readingPacket = packet;
@@ -605,6 +789,11 @@ bool lumen_request(lumen_packet_t *packet) {
 
 bool lumen_read(lumen_packet_t *packet) {
 
+#if USE_PROJECT_UPDATE
+  if (g_is_updating)
+    return false;
+#endif
+
   reading = true;
 
   if (!lumen_request(packet)) {
@@ -627,9 +816,10 @@ bool lumen_read(lumen_packet_t *packet) {
 
 #if USE_PROJECT_UPDATE
 
-#define MESSAGE(x) lumen_write_bytes((uint8_t *)x, (uint32_t)sizeof(x) - 1)
+#define MESSAGE(x) lumen_write_bytes((uint8_t *)x, (uint32_t)strlen(x))
 
 #define kUpdateProject "UPDATE PROJECT A"
+#define kUpdateFirmware "UPDATE FIRMWARE A"
 #define kCommandFinished "FINISHED A"
 #define kCommandNewDataBlock "NEW BLOCK A"
 #define kOKMessage "RECEIVED OK A"
@@ -706,7 +896,7 @@ static u16_union_t lumen_project_update_calculate_crc(uint8_t *data, uint32_t le
   return crc;
 }
 
-static bool lumen_project_update_start() {
+static bool lumen_update_start(const char *msg) {
 
   if (isStarted) {
     return true;
@@ -723,15 +913,17 @@ static bool lumen_project_update_start() {
   }
 
   if (elapsedTimeInMs >= startInterval) {
-    MESSAGE(kUpdateProject);
+    MESSAGE(msg);
     startInterval = elapsedTimeInMs + kStartInterval;
   }
 
   return false;
 }
 
-bool lumen_project_update_send_data(uint8_t *data, uint32_t length) {
-  if (lumen_project_update_start()) {
+bool lumen_update_send_data(uint8_t *data, uint32_t length, const char *msgUpdate) {
+  g_is_updating = true;
+
+  if (lumen_update_start(msgUpdate)) {
     static uint32_t dataIndex = 0;
     static uint32_t blockBufferLength = 0;
     static uint8_t blockBuffer[kProjectUpdateBlockLength + kProjectUpdateCrcLength];
@@ -796,10 +988,12 @@ bool lumen_project_update_send_data(uint8_t *data, uint32_t length) {
                 lumen_write_bytes(blockBuffer, kProjectUpdateBlockLength + kProjectUpdateCrcLength);
                 sendStep = kWaitingForOkMessageOfBlock;
                 sendBlockInterval = kSendBlockInterval + elapsedTimeInMs;
+                break;
               }
               if (lumen_project_update_word_checker(&notOkMessageWordComparator, (char)receivedData)) {
                 sendStep = kSendNewBlockCmd;
                 sendBlockInterval = kSendBlockInterval + elapsedTimeInMs;
+                break;
               }
               receivedData = lumen_get_byte();
             }
@@ -814,10 +1008,12 @@ bool lumen_project_update_send_data(uint8_t *data, uint32_t length) {
                 sendBlockInterval = kSendBlockInterval + elapsedTimeInMs;
                 sendingLength -= sendingLengthOfLastBlock;
                 sendingLengthOfLastBlock = 0;
+                break;
               }
               if (lumen_project_update_word_checker(&notOkMessageWordComparator, (char)receivedData)) {
                 sendStep = kSendNewBlockCmd;
                 sendBlockInterval = kSendBlockInterval + elapsedTimeInMs;
+                break;
               }
               receivedData = lumen_get_byte();
             }
@@ -828,7 +1024,7 @@ bool lumen_project_update_send_data(uint8_t *data, uint32_t length) {
       }
 
       if (elapsedTimeInMs >= sendBlockInterval) {
-        lumen_write_bytes(blockBuffer, kProjectUpdateBlockLength + kProjectUpdateCrcLength);
+        sendStep = kSendNewBlockCmd;
         sendBlockInterval = elapsedTimeInMs + kSendBlockInterval;
       }
     }
@@ -843,11 +1039,20 @@ bool lumen_project_update_send_data(uint8_t *data, uint32_t length) {
   return false;
 }
 
+bool lumen_firmware_update_send_data(uint8_t *data, uint32_t length) {
+  return lumen_update_send_data(data, length, kUpdateFirmware);
+}
+
+bool lumen_project_update_send_data(uint8_t *data, uint32_t length) {
+  return lumen_update_send_data(data, length, kUpdateProject);
+}
+
 void lumen_project_update_tick(uint32_t time_in_ms) {
   elapsedTimeInMs += time_in_ms;
 }
 
 void lumen_project_update_finish() {
+  g_is_updating = false;
   MESSAGE(kCommandFinished);
   isStarted = false;
 }
