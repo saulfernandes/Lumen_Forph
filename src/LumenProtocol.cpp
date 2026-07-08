@@ -1,4 +1,5 @@
 #include "LumenProtocol.h"
+#include <string.h>
 
 // Version 1.1
 
