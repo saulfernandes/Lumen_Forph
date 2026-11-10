@@ -1232,6 +1232,5 @@ bool lumen_project_and_firmware_update_finish() {
 bool lumen_project_and_firmware_update_finish_and_reset() {
   return lumen_finish(kCommandFinishedAndReset);
 }
-}
 
 #endif
